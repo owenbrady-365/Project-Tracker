@@ -1,0 +1,410 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Neon Project Tracker v1.1</title>
+<style>
+  body {
+    margin: 0;
+    background: linear-gradient(180deg, #0a0a0a, #151515);
+    font-family: 'Segoe UI', sans-serif;
+    color: #eee;
+    overflow: hidden;
+  }
+
+  /* Sidebar */
+  #sidebar {
+    position: fixed;
+    top: 0; left: 0;
+    height: 100vh;
+    width: 250px;
+    background: #111;
+    transform: translateX(-260px);
+    transition: transform 0.3s ease;
+    z-index: 10;
+    padding: 1em;
+    box-shadow: 2px 0 10px rgba(0,0,0,0.6);
+  }
+  #sidebar.active { transform: translateX(0); }
+  #sidebar h2 { margin-top: 0; }
+  #sidebar button, #toggleMenu {
+    background: #222; color: #0f0;
+    border: none; padding: 0.5em 1em;
+    border-radius: 8px; cursor: pointer;
+    margin-top: 0.5em;
+  }
+  #toggleMenu {
+    position: fixed;
+    top: 1em; left: 1em;
+    z-index: 20;
+  }
+
+  /* Workspace */
+  #workspace {
+    position: relative;
+    width: 100vw; height: 100vh;
+    overflow: auto;
+  }
+
+  /* Project Header */
+  .project-header {
+    text-align: center;
+    padding-top: 1em;
+    position: relative;
+  }
+  .project-header h1 {
+    display: inline-block;
+    font-size: 1.8em;
+    margin: 0.2em 0;
+  }
+  .project-header button.settings-btn {
+    background: #222;
+    border: none;
+    color: var(--neon, #0f0);
+    border-radius: 6px;
+    padding: 0.3em 0.7em;
+    cursor: pointer;
+    margin-left: 0.5em;
+  }
+  .progress-bar {
+    height: 6px;
+    width: 60%;
+    margin: 0.5em auto;
+    border-radius: 3px;
+    background: #222;
+    overflow: hidden;
+  }
+  .progress-bar-fill {
+    height: 100%;
+    width: 0%;
+    background: var(--neon);
+    transition: width 0.3s ease;
+    box-shadow: 0 0 10px var(--neon);
+  }
+
+  /* Nodes */
+  .node {
+    position: absolute;
+    background: #222;
+    border: 2px solid #333;
+    padding: 0.8em;
+    border-radius: 10px;
+    width: 200px;
+    text-align: left;
+    box-shadow: 0 0 10px #000;
+    transition: box-shadow 0.3s, border-color 0.3s;
+    cursor: grab;
+  }
+  .node:active { cursor: grabbing; }
+  .node.glow {
+    box-shadow: 0 0 20px var(--neon);
+    border-color: var(--neon);
+  }
+  .node textarea {
+    width: 100%; height: 60px;
+    background: transparent;
+    color: #eee;
+    border: none; resize: none;
+  }
+  .node-controls {
+    display: flex; justify-content: space-between;
+    align-items: center;
+  }
+  .node-controls button {
+    background: #333; border: none; border-radius: 5px;
+    color: #0f0; cursor: pointer; padding: 0.2em 0.5em;
+  }
+  .node img {
+    margin-top: 0.5em; max-width: 100%; border-radius: 5px;
+  }
+
+  /* SVG Lines */
+  svg {
+    position: absolute;
+    top: 0; left: 0;
+    width: 100%; height: 100%;
+    overflow: visible;
+    z-index: 0;
+  }
+  .tube {
+    stroke: #333;
+    stroke-width: 3;
+    fill: none;
+    transition: stroke 0.5s;
+  }
+  .tube.glow {
+    stroke: var(--neon);
+    filter: drop-shadow(0 0 6px var(--neon));
+  }
+
+  /* Settings Modal */
+  #modalOverlay {
+    display: none;
+    position: fixed;
+    top: 0; left: 0;
+    width: 100%; height: 100%;
+    background: rgba(0,0,0,0.3);
+    justify-content: center; align-items: center;
+    z-index: 100;
+  }
+  #settingsModal {
+    background: #1a1a1a;
+    border: 1px solid #333;
+    border-radius: 10px;
+    padding: 1em 2em;
+    text-align: center;
+    color: #eee;
+    min-width: 300px;
+  }
+  #settingsModal input[type="text"] {
+    width: 80%;
+    margin: 0.5em 0;
+    background: #222;
+    border: 1px solid #444;
+    color: #eee;
+    padding: 0.3em;
+  }
+  #settingsModal input[type="color"],
+  #settingsModal input[type="file"] {
+    margin: 0.5em 0;
+  }
+  #settingsModal button {
+    background: #222;
+    border: none;
+    color: var(--neon, #0f0);
+    padding: 0.5em 1em;
+    border-radius: 6px;
+    margin-top: 0.5em;
+    cursor: pointer;
+  }
+
+  /* Scrollbar */
+  ::-webkit-scrollbar { width: 10px; }
+  ::-webkit-scrollbar-thumb { background: #333; border-radius: 5px; }
+</style>
+</head>
+<body>
+<button id="toggleMenu">☰</button>
+<div id="sidebar">
+  <h2>Projects</h2>
+  <div id="projectList"></div>
+  <button id="addProject">+ New Project</button>
+</div>
+
+<div id="workspace">
+  <svg id="connections"></svg>
+  <div class="project-header" id="projectHeader"></div>
+  <div id="nodesContainer"></div>
+</div>
+
+<!-- Modal -->
+<div id="modalOverlay">
+  <div id="settingsModal">
+    <h2>Project Settings</h2>
+    <label>Project Name</label><br>
+    <input type="text" id="modalTitle"><br>
+    <label>Neon Color</label><br>
+    <input type="color" id="modalColor"><br>
+    <label>Project Image</label><br>
+    <input type="file" id="modalImg" accept="image/*"><br>
+    <button id="closeModal">Close</button>
+  </div>
+</div>
+
+<script>
+let data = JSON.parse(localStorage.getItem('neonTrackerData') || '{}');
+let currentProjectId = null;
+const projectList = document.getElementById('projectList');
+const workspace = document.getElementById('workspace');
+const nodesContainer = document.getElementById('nodesContainer');
+const connections = document.getElementById('connections');
+const projectHeader = document.getElementById('projectHeader');
+const sidebar = document.getElementById('sidebar');
+const toggleMenu = document.getElementById('toggleMenu');
+const modalOverlay = document.getElementById('modalOverlay');
+const modalTitle = document.getElementById('modalTitle');
+const modalColor = document.getElementById('modalColor');
+const modalImg = document.getElementById('modalImg');
+const closeModal = document.getElementById('closeModal');
+
+toggleMenu.onclick = () => sidebar.classList.toggle('active');
+document.getElementById('addProject').onclick = () => {
+  const id = 'proj-' + Date.now();
+  data[id] = {
+    id, title: 'New Project', color: '#0f0', image: '', done:false,
+    nodes: [
+      {id:'node-1', text:'Start Here', done:true, parent:null, x:window.innerWidth/2-100, y:200, image:''}
+    ]
+  };
+  save();
+  loadProject(id);
+  refreshProjectList();
+};
+
+function refreshProjectList(){
+  projectList.innerHTML='';
+  Object.values(data).forEach(p=>{
+    const div=document.createElement('div');
+    div.textContent=p.title;
+    div.style.cursor='pointer';
+    div.onclick=()=>{loadProject(p.id); sidebar.classList.remove('active');};
+    projectList.appendChild(div);
+  });
+}
+
+function save(){ localStorage.setItem('neonTrackerData', JSON.stringify(data)); }
+
+function loadProject(id){
+  currentProjectId=id;
+  const proj=data[id];
+  workspace.style.setProperty('--neon', proj.color);
+  renderProject(proj);
+}
+
+function renderProject(proj){
+  // Progress calculation
+  const total=proj.nodes.length;
+  const complete=proj.nodes.filter(n=>n.done && isPathComplete(proj,n)).length;
+  const progressPct=Math.round((complete/total)*100);
+
+  projectHeader.innerHTML=`
+    <h1>${proj.title}</h1>
+    <button class="settings-btn">⚙️</button>
+    <div class="progress-bar"><div class="progress-bar-fill" style="width:${progressPct}%;"></div></div>
+    ${proj.image?`<img src="${proj.image}" style="max-width:150px;border-radius:8px;">`:''}
+  `;
+  document.querySelector('.settings-btn').onclick=()=>openSettings(proj);
+
+  nodesContainer.innerHTML='';
+  connections.innerHTML='';
+  proj.nodes.forEach(node=>createNodeElement(node,proj.color));
+  drawConnections(proj);
+}
+
+function openSettings(proj){
+  modalOverlay.style.display='flex';
+  modalTitle.value=proj.title;
+  modalColor.value=proj.color;
+  modalImg.value=null;
+  closeModal.onclick=()=>modalOverlay.style.display='none';
+  modalTitle.oninput=()=>{proj.title=modalTitle.value;save();renderProject(proj);refreshProjectList();};
+  modalColor.oninput=()=>{proj.color=modalColor.value;workspace.style.setProperty('--neon',proj.color);save();renderProject(proj);};
+  modalImg.onchange=e=>{
+    const f=e.target.files[0];if(!f)return;
+    const r=new FileReader();
+    r.onload=()=>{proj.image=r.result;save();renderProject(proj);};
+    r.readAsDataURL(f);
+  };
+}
+
+function isPathComplete(proj,node){
+  if(!node.parent) return proj.done || false;
+  const parent=proj.nodes.find(n=>n.id===node.parent);
+  if(!parent) return proj.done || false;
+  return parent.done && isPathComplete(proj,parent);
+}
+
+function createNodeElement(node, color){
+  const div=document.createElement('div');
+  div.className='node';
+  div.style.left=node.x+'px';
+  div.style.top=node.y+'px';
+  div.dataset.id=node.id;
+  div.style.setProperty('--neon', color);
+
+  const proj=data[currentProjectId];
+  if(node.done && isPathComplete(proj,node)) div.classList.add('glow');
+
+  div.innerHTML=`
+    <div class="node-controls">
+      <input type="checkbox" class="done" ${node.done?'checked':''}>
+      <button class="addDown">↓</button>
+      <button class="addSide">→</button>
+      <input type="file" class="imgInput" accept="image/*" style="width:60px">
+    </div>
+    <textarea>${node.text}</textarea>
+    ${node.image?`<img src="${node.image}">`:''}
+  `;
+  nodesContainer.appendChild(div);
+
+  div.querySelector('.done').onchange=e=>{
+    node.done=e.target.checked; save(); renderProject(data[currentProjectId]);
+  };
+  div.querySelector('.addDown').onclick=()=>addBranch(node.id,'down');
+  div.querySelector('.addSide').onclick=()=>addBranch(node.id,'side');
+  div.querySelector('textarea').oninput=e=>{
+    node.text=e.target.value; save();
+  };
+  div.querySelector('.imgInput').onchange=e=>{
+    const f=e.target.files[0]; if(!f) return;
+    const r=new FileReader();
+    r.onload=()=>{node.image=r.result; save(); renderProject(data[currentProjectId]);};
+    r.readAsDataURL(f);
+  };
+
+  enableDrag(div,node);
+}
+
+function addBranch(parentId, dir){
+  const proj=data[currentProjectId];
+  const parent=proj.nodes.find(n=>n.id===parentId);
+  const newId='node-'+Date.now();
+  const offset= dir==='down'? {x:0,y:250} : {x:300,y:0};
+  const newNode={id:newId,text:'New Task',done:false,parent:parentId,
+                 x:parent.x+offset.x,y:parent.y+offset.y,image:''};
+  proj.nodes.push(newNode);
+  save();
+  renderProject(proj);
+}
+
+function drawConnections(proj){
+  proj.nodes.forEach(node=>{
+    if(node.parent){
+      const parent=proj.nodes.find(n=>n.id===node.parent);
+      if(!parent) return;
+      const line=document.createElementNS('http://www.w3.org/2000/svg','line');
+      line.setAttribute('x1', parent.x+100);
+      line.setAttribute('y1', parent.y+100);
+      line.setAttribute('x2', node.x+100);
+      line.setAttribute('y2', node.y);
+      line.classList.add('tube');
+      if(parent.done && node.done && isPathComplete(proj,node)) line.classList.add('glow');
+      line.style.setProperty('--neon',proj.color);
+      connections.appendChild(line);
+    }
+  });
+}
+
+/* Drag & Drop with Grid Snap */
+function enableDrag(div,node){
+  let offsetX,offsetY,isDragging=false;
+  div.addEventListener('pointerdown',e=>{
+    if(e.target.tagName==='TEXTAREA'||e.target.tagName==='INPUT'||e.target.tagName==='BUTTON')return;
+    isDragging=true;
+    offsetX=e.clientX-node.x;
+    offsetY=e.clientY-node.y;
+    div.setPointerCapture(e.pointerId);
+  });
+  div.addEventListener('pointermove',e=>{
+    if(!isDragging)return;
+    const x=Math.round((e.clientX-offsetX)/50)*50;
+    const y=Math.round((e.clientY-offsetY)/50)*50;
+    node.x=x; node.y=y;
+    div.style.left=x+'px'; div.style.top=y+'px';
+    drawConnections(data[currentProjectId]);
+  });
+  div.addEventListener('pointerup',e=>{
+    if(!isDragging)return;
+    isDragging=false;
+    save();
+    renderProject(data[currentProjectId]);
+  });
+}
+
+refreshProjectList();
+const first=Object.keys(data)[0];
+if(first) loadProject(first);
+</script>
+</body>
+</html>

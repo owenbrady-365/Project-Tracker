@@ -1,0 +1,304 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Neon Project Tracker</title>
+<style>
+  body {
+    margin: 0;
+    background: linear-gradient(180deg, #0a0a0a, #151515);
+    font-family: 'Segoe UI', sans-serif;
+    color: #eee;
+    overflow: hidden;
+  }
+
+  /* Sidebar */
+  #sidebar {
+    position: fixed;
+    top: 0; left: 0;
+    height: 100vh;
+    width: 250px;
+    background: #111;
+    transform: translateX(-260px);
+    transition: transform 0.3s ease;
+    z-index: 10;
+    padding: 1em;
+    box-shadow: 2px 0 10px rgba(0,0,0,0.6);
+  }
+  #sidebar.active { transform: translateX(0); }
+  #sidebar h2 { margin-top: 0; }
+  #sidebar button, #toggleMenu {
+    background: #222; color: #0f0;
+    border: none; padding: 0.5em 1em;
+    border-radius: 8px; cursor: pointer;
+    margin-top: 0.5em;
+  }
+  #toggleMenu {
+    position: fixed;
+    top: 1em; left: 1em;
+    z-index: 20;
+  }
+
+  /* Workspace */
+  #workspace {
+    position: relative;
+    width: 100vw; height: 100vh;
+    overflow: auto;
+  }
+
+  /* Project header */
+  .project-header {
+    text-align: center;
+    padding-top: 2em;
+  }
+  .project-header input[type="text"] {
+    font-size: 1.5em;
+    background: transparent;
+    border: none;
+    border-bottom: 2px solid #444;
+    color: inherit;
+    text-align: center;
+    width: 60%;
+  }
+  .project-header input[type="color"] {
+    margin-left: 1em;
+    vertical-align: middle;
+  }
+  .project-header img {
+    margin-top: 1em;
+    max-width: 200px; border-radius: 10px;
+  }
+
+  /* Nodes */
+  .node {
+    position: absolute;
+    background: #222;
+    border: 2px solid #333;
+    padding: 0.8em;
+    border-radius: 10px;
+    width: 200px;
+    text-align: left;
+    box-shadow: 0 0 10px #000;
+    transition: box-shadow 0.3s;
+  }
+  .node.glow {
+    box-shadow: 0 0 20px var(--neon);
+    border-color: var(--neon);
+  }
+  .node textarea {
+    width: 100%; height: 60px;
+    background: transparent;
+    color: #eee;
+    border: none; resize: none;
+  }
+  .node-controls {
+    display: flex; justify-content: space-between;
+    align-items: center;
+  }
+  .node-controls button {
+    background: #333; border: none; border-radius: 5px;
+    color: #0f0; cursor: pointer; padding: 0.2em 0.5em;
+  }
+  .node img {
+    margin-top: 0.5em; max-width: 100%; border-radius: 5px;
+  }
+
+  /* SVG Lines */
+  svg {
+    position: absolute;
+    top: 0; left: 0;
+    width: 100%; height: 100%;
+    overflow: visible;
+    z-index: 0;
+  }
+  .tube {
+    stroke: #333;
+    stroke-width: 3;
+    fill: none;
+    transition: stroke 0.5s;
+  }
+  .tube.glow {
+    stroke: var(--neon);
+    filter: drop-shadow(0 0 6px var(--neon));
+  }
+
+  /* Scrollbar */
+  ::-webkit-scrollbar { width: 10px; }
+  ::-webkit-scrollbar-thumb { background: #333; border-radius: 5px; }
+
+</style>
+</head>
+<body>
+<button id="toggleMenu">☰</button>
+<div id="sidebar">
+  <h2>Projects</h2>
+  <div id="projectList"></div>
+  <button id="addProject">+ New Project</button>
+</div>
+
+<div id="workspace">
+  <svg id="connections"></svg>
+  <div class="project-header" id="projectHeader"></div>
+  <div id="nodesContainer"></div>
+</div>
+
+<script>
+let data = JSON.parse(localStorage.getItem('neonTrackerData') || '{}');
+let currentProjectId = null;
+const projectList = document.getElementById('projectList');
+const workspace = document.getElementById('workspace');
+const nodesContainer = document.getElementById('nodesContainer');
+const connections = document.getElementById('connections');
+const projectHeader = document.getElementById('projectHeader');
+const sidebar = document.getElementById('sidebar');
+const toggleMenu = document.getElementById('toggleMenu');
+
+toggleMenu.onclick = () => sidebar.classList.toggle('active');
+document.getElementById('addProject').onclick = () => {
+  const id = 'proj-' + Date.now();
+  data[id] = {
+    id, title: 'New Project', color: '#0f0', image: '', nodes: [
+      {id:'node-1', text:'Start Here', done:false, parent:null, x:window.innerWidth/2-100, y:200, image:''}
+    ]
+  };
+  save();
+  loadProject(id);
+  refreshProjectList();
+};
+
+function refreshProjectList(){
+  projectList.innerHTML='';
+  Object.values(data).forEach(p=>{
+    const div=document.createElement('div');
+    div.textContent=p.title;
+    div.style.cursor='pointer';
+    div.onclick=()=>{loadProject(p.id); sidebar.classList.remove('active');};
+    projectList.appendChild(div);
+  });
+}
+
+function save(){
+  localStorage.setItem('neonTrackerData', JSON.stringify(data));
+}
+
+function loadProject(id){
+  currentProjectId=id;
+  const proj=data[id];
+  workspace.style.setProperty('--neon', proj.color);
+  renderProject(proj);
+}
+
+function renderProject(proj){
+  projectHeader.innerHTML=`
+    <input type="checkbox" id="titleCheck" ${proj.done?'checked':''}>
+    <input type="text" id="titleInput" value="${proj.title}">
+    <input type="color" id="colorPicker" value="${proj.color}">
+    <br>
+    <input type="file" id="projImgInput" accept="image/*">
+    ${proj.image?`<br><img src="${proj.image}">`:''}
+  `;
+  nodesContainer.innerHTML='';
+  connections.innerHTML='';
+  proj.nodes.forEach(node=>createNodeElement(node,proj.color));
+  drawConnections();
+  attachHeaderEvents(proj);
+}
+
+function attachHeaderEvents(proj){
+  document.getElementById('titleInput').oninput=e=>{
+    proj.title=e.target.value; save(); refreshProjectList();
+  };
+  document.getElementById('colorPicker').oninput=e=>{
+    proj.color=e.target.value; workspace.style.setProperty('--neon',proj.color);
+    save(); renderProject(proj);
+  };
+  document.getElementById('projImgInput').onchange=e=>{
+    const file=e.target.files[0]; if(!file) return;
+    const r=new FileReader();
+    r.onload=()=>{proj.image=r.result; save(); renderProject(proj);};
+    r.readAsDataURL(file);
+  };
+  document.getElementById('titleCheck').onchange=e=>{
+    proj.done=e.target.checked; save(); renderProject(proj);
+  };
+}
+
+function createNodeElement(node, color){
+  const div=document.createElement('div');
+  div.className='node';
+  div.style.left=node.x+'px';
+  div.style.top=node.y+'px';
+  div.dataset.id=node.id;
+  div.style.setProperty('--neon', color);
+  if(node.done) div.classList.add('glow');
+
+  div.innerHTML=`
+    <div class="node-controls">
+      <input type="checkbox" class="done" ${node.done?'checked':''}>
+      <button class="addDown">↓</button>
+      <button class="addSide">→</button>
+      <input type="file" class="imgInput" accept="image/*" style="width:60px">
+    </div>
+    <textarea>${node.text}</textarea>
+    ${node.image?`<img src="${node.image}">`:''}
+  `;
+  nodesContainer.appendChild(div);
+
+  div.querySelector('.done').onchange=e=>{
+    node.done=e.target.checked; save(); renderProject(data[currentProjectId]);
+  };
+  div.querySelector('.addDown').onclick=()=>addBranch(node.id,'down');
+  div.querySelector('.addSide').onclick=()=>addBranch(node.id,'side');
+  div.querySelector('textarea').oninput=e=>{
+    node.text=e.target.value; save();
+  };
+  div.querySelector('.imgInput').onchange=e=>{
+    const f=e.target.files[0]; if(!f) return;
+    const r=new FileReader();
+    r.onload=()=>{node.image=r.result; save(); renderProject(data[currentProjectId]);};
+    r.readAsDataURL(f);
+  };
+}
+
+function addBranch(parentId, dir){
+  const proj=data[currentProjectId];
+  const parent=proj.nodes.find(n=>n.id===parentId);
+  const newId='node-'+Date.now();
+  const offset= dir==='down'? {x:0,y:150} : {x:220,y:0};
+  const newNode={
+    id:newId, text:'New Task', done:false,
+    parent:parentId,
+    x: parent.x+offset.x, y: parent.y+offset.y, image:''
+  };
+  proj.nodes.push(newNode);
+  save();
+  renderProject(proj);
+}
+
+function drawConnections(){
+  const proj=data[currentProjectId];
+  proj.nodes.forEach(node=>{
+    if(node.parent){
+      const parent=proj.nodes.find(n=>n.id===node.parent);
+      if(!parent) return;
+      const line=document.createElementNS('http://www.w3.org/2000/svg','line');
+      line.setAttribute('x1', parent.x+100);
+      line.setAttribute('y1', parent.y+100);
+      line.setAttribute('x2', node.x+100);
+      line.setAttribute('y2', node.y);
+      line.classList.add('tube');
+      if(parent.done && node.done && proj.done) line.classList.add('glow');
+      line.style.setProperty('--neon',proj.color);
+      connections.appendChild(line);
+    }
+  });
+}
+
+refreshProjectList();
+const first=Object.keys(data)[0];
+if(first) loadProject(first);
+
+</script>
+</body>
+</html>
